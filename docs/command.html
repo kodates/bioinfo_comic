@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Bioinfo Comics - Command</title>
+    <script>
+      (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+      (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+      m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+      })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+      ga('create', 'UA-89125818-1', 'auto');
+      ga('send', 'pageview');
+    </script>
+  </head>
+  <body>
+    環境はMacを想定しています。<br>
+    （要：HDD空き容量200GBくらい、メモリ16GBくらい）<br>
+    Windowsの人はゴメンナサイ（動作確認していません）<br>
+<br>
+    まず<a href="https://brew.sh/index_ja.html" target="_blank">Homebrew</a>をインストールしてください。<br>
+    ファイル名のXは適宜変換してください。<br>
+<br>
+<br>
+    <b>p4-2, p10-1</b><br>
+    圧縮されたFASTQファイルの中身を確認する<br>
+    <tt><span style="background-color:#dddddd">gzcat X_1.fastq.gz | less</span></tt><br>
+<br>
+<br>
+    <b>p11-1</b><br>
+    FASTQファイルに書かれたDNAの文字数を確認する<br>
+    <tt><span style="background-color:#dddddd">gzcat X_1.fastq.gz | awk 'NR%4==2{sum+=length} END {print sum}'</span></tt><br>
+<br>
+<br>
+    <b>p15-2</b><br>
+    Homebrewでインストール：FastQC<br>
+    <tt><span style="background-color:#dddddd">
+    brew search fastqc<br>
+    brew tap homebrew/science<br>
+    brew install fastqc
+    </span></tt><br>
+<br>
+    FastQC結果用のディレクトリを作成<br>
+    <tt><span style="background-color:#dddddd">mkdir fastqc_before fastqc_after</span></tt><br>
+<br>
+    FastQCを実行<br>
+    <tt><span style="background-color:#dddddd">fastqc -f fastq -t 8 -o fastqc_before X_1.fastq.gz X_2.fastq.gz</span></tt><br>
+<br>
+<br>
+    <b>p15-6</b><br>
+    Trimmomaticをインストール<br>
+    <tt><span style="background-color:#dddddd">brew install trimmomatic</span></tt><br>
+    <br>
+    TrimmomaticとFastQC実行用スクリプト<br>
+    [ファイル名：01_trimming.sh]<br>
+<table border=0 bgcolor="#dddddd">
+<tr><td>
+<tt>
+    #!/usr/bin/env sh<br>
+    <br>
+    trimmomatic PE -phred33 -threads 8 \<br>
+    -trimlog X.trimlog \<br>
+    X_1.fastq.gz X_2.fastq.gz \<br>
+    X_1.paired.fastq.gz X_2.unpaired.fastq.gz \<br>
+    X_2.paired.fastq.gz X_2.unpaired.fastq.gz \<br>
+    TRAILING:20 MINLEN:50<br>
+<br>
+    fastqc -f fastq -t 8 -o fastqc_after \<br>
+    X_1.paired.fastq.gz X_2.paired.fastq.gz<br>
+</tt>
+</tr></td>
+</table>
+<br>
+    （実行）<br>
+    <tt><span style="background-color:#dddddd">sh 01_trimming.sh</span></tt><br>
+<br>
+<br>
+    <b>p17-1</b><br>
+    FASTQ各文字のクオリティ（自信度）を読めるように変換し確認する<br>
+<table border=0 bgcolor="#dddddd">
+<tr><td>
+<tt>    
+    qline=`gzcat X_1.fastq.gz|head -4|tail -1`<br>
+<br>
+    for i in `seq 1 ${#qline}`; do<br>
+    ascii=`printf '%d' \'${qline:$i-1:1}`<br>
+    qual=`expr ${ascii} - 33`<br>
+    printf '%.3f ' $((10**(-${qual}/10.0)))<br>
+    done<br>
+</tt>
+</tr></td>
+</table>
+<br>
+<br>
+    <b>p20-1</b><br>
+    Homebrewでインストール：SAMtools, BWA<br>
+    <tt><span style="background-color:#dddddd">brew install samtools</span></tt><br>
+    <tt><span style="background-color:#dddddd">brew install bwa</span></tt><br>
+<br>
+<br>
+    <b>p20-3</b><br>
+    GATKのインストールを確認<br>
+    <tt><span style="background-color:#dddddd">java -jar GenomeAnalysisTK-3.6/GenomeAnalysisTK.jar -version</span></tt><br>
+<br>
+<br>
+    <b>p20-4</b><br>
+    保存用ディレクトリ作成と移動<br>
+    <tt><span style="background-color:#dddddd">mkdir b37</span></tt><br>
+    <tt><span style="background-color:#dddddd">cd b37</span></tt><br>
+<br>
+    見本ゲノムなどのダウンロード<br>
+<table border=0 bgcolor="#dddddd">
+<tr><td>
+<tt>
+    url=ftp://gsapubftp-anonymous@ftp.broadinstitute.org/bundle/2.8/b37<br>
+<br>
+    for dl_file in {human_g1k_v37.fasta.gz,human_g1k_v37.fasta.fai.gz,\<br>
+    human_g1k_v37.dict.gz,Broad.human.exome.b37.interval_list.gz,\<br>
+    dbsnp_138.b37.vcf.gz,dbsnp_138.b37.vcf.idx.gz}; do<br>
+    curl -O ${url}/${dl_file}<br>
+    done<br>
+</tt>
+</tr></td>
+</table>
+<br>
+<br>
+    <b>p21-1</b><br>
+    アラインメント（はりつけ）と後処理<br>
+    [ファイル名：02_alignment.sh]<br>
+<table border=0 bgcolor="#dddddd">
+<tr><td>
+<tt>
+    #!/usr/bin/env sh<br>
+<br>
+    bwa index -a b37/human_g1k_v37.fasta<br>
+    ulimit -n 3000<br>
+<br>
+    bwa mem -t 8 \<br>
+    -R '@RG\tID:X\tSM:X\tPL:Illumina' \<br>
+    b37/human_g1k_v37.fasta \<br>
+    X_1.paired.fastq.gz X_2.paired.fastq.gz | \<br>
+    samtools view -@ 8 -1 -S - > X_aligned.bam<br>
+<br>
+    samtools sort -@ 8 X_aligned.bam X_aligned_sorted<br>
+<br>
+    samtools index X_aligned_sorted.bam X_aligned_sorted.bai<br>
+</tt>
+</tr></td>
+</table>
+<br>
+    （実行）<br>
+    <tt><span style="background-color:#dddddd">sh 02_alignment.sh</span></tt><br>
+<br>
+<br>
+    <b>p24-4</b><br>
+    見本とのちがいを計算<br>
+    [ファイル名：03_variant.sh]<br>
+<table border=0 bgcolor="#dddddd">
+<tr><td>
+<tt>
+    #!/usr/bin/env sh<br>
+<br>
+    java -Xmx8g -jar GenomeAnalysisTK-3.6/\<br>
+    GenomeAnalysisTK.jar \<br>
+    -T HaplotypeCaller \<br>
+    -R b37/human_g1k_v37.fasta \<br>
+    -I X_aligned_sorted.bam \<br>
+    --dbsnp b37/dbsnp_138.b37.vcf \<br>
+    -L b37/Broad.human.exome.b37.interval_list \<br>
+    -o X_variants.vcf<br>
+</tt>
+</tr></td>
+</table>
+<br>
+    （実行）<br>
+    <tt><span style="background-color:#dddddd">sh 03_variant.sh</span></tt><br>
+<br>
+<br>
+    <b>p24-6</b><br>
+    はりついた結果を確認<br>
+    <tt><span style="background-color:#dddddd">samtools view X_aligned_sorted.bam | less -S</span></tt><br>
+<br>
+<br>
+    <b>p25-1</b><br>
+    はりついた結果を確認（染色体ごと）<br>
+    <tt><span style="background-color:#dddddd">less mapping_stat.txt</span></tt><br>
+<br>
+<br>
+    <b>p25-2</b><br>
+    はりついた数を確認<br>
+    <tt><span style="background-color:#dddddd">awk '{map+=$3} END {print map}' mapping_stat.txt</span></tt><br>
+<br>
+<br>
+    <b>p29-4</b><br>
+    はりつかなかった数を確認<br>
+    <tt><span style="background-color:#dddddd">awk '{unmap+=$4} END {print unmap}' mapping_stat.txt</span></tt><br>
+<br>
+    はりついた割合を確認<br>
+    <tt><span style="background-color:#dddddd">awk '{map+=$3;unmap+=$4} END {print map/(map+unmap)}' mapping_stat.txt</span></tt><br>
+<br>
+<br>
+    <b>p30-5</b><br>
+    X, Y染色体へのはりつき具合の比較<br>
+    常染色体（22本）<br>
+    <tt><span style="background-color:#dddddd">head -22 mapping_stat.txt | awk '{base+=$2;read+=$3} END {print read/base}'</span></tt><br>
+<br>
+    X染色体<br>
+    <tt><span style="background-color:#dddddd">grep '^X' mapping_stat.txt | awk '{print $3/$2}'</span></tt><br>
+<br>
+    Y染色体<br>
+    <tt><span style="background-color:#dddddd">grep '^Y' mapping_stat.txt | awk '{print $3/$2}'</span></tt><br>
+<br>
+<br>
+    <b>p31-3</b><br>
+    見本とのちがいを確認する<br>
+    <tt><span style="background-color:#dddddd">grep -v '^#' X_variants.vcf | less -S</span></tt><br>
+<br>
+<br>
+    <b>p32-1</b><br>
+    X染色体でのちがいの種類を確認する<br>
+    <tt><span style="background-color:#dddddd">grep '^X' X_variants.vcf | cut -f8 | cut -d';' -f1 | sort | uniq -c</span></tt><br>
+<br>
+<br>
+    <b>p33-3</b><br>
+    X染色体でのちがいを確認する<br>
+    <tt><span style="background-color:#dddddd">grep '^X' X_variants.vcf | cut -f 1,4,5,10 | less</span></tt><br>
+<br>
+<br>
+    <b>p34-1</b><br>
+    ちがいの場所と番号を確認する<br>
+    <tt><span style="background-color:#dddddd">grep -v '^#' X_variants.vcf | cut -f 1,2,3 | less</span></tt><br>
+<br>
+<br>
+    <b>p34-3, p34-5, p36-1, p37-2</b><br>
+    様々なちがいの情報を確認する<br>
+    お酒<br>
+    <tt><span style="background-color:#dddddd">grep -w 'rs671' X_variants.vcf | cut -f1,2,3,4,5,6,10</span></tt><br>
+<br>
+    耳垢<br>
+    <tt><span style="background-color:#dddddd">grep -w 'rs17822931' X_variants.vcf | cut -f1,2,3,4,5,6,10</span></tt><br>
+<br>
+    血液型1<br>
+    <tt><span style="background-color:#dddddd">grep -w 'rs8176719' X_variants.vcf | cut -f1,2,3,4,5,6,10</span></tt><br>
+<br>
+    血液型2<br>
+    <tt><span style="background-color:#dddddd">grep -w 'rs8176746' X_variants.vcf | cut -f1,2,3,4,5,6,10</span></tt><br>
+<br>
+    血液型3<br>
+    <tt><span style="background-color:#dddddd">grep -w 'rs8176747' X_variants.vcf | cut -f1,2,3,4,5,6,10</span></tt><br>
+<br>
+<br>
+    <b>p39-4</b><br>
+    はりつかなかった数を確認<br>
+    <tt><span style="background-color:#dddddd">cut -f4 mapping_stat.txt | less</span></tt><br>
+<br>
+<br>
+    <b>p40-41</b><br>
+    ウイルスゲノムへのはりつけ<br>
+    はりつかなかったこま切れを取り出す<br>
+    <tt><span style="background-color:#dddddd">samtools view -b -f 4 X_aligned_sorted.bam > X_unmapped.bam</span></tt><br>
+<br>
+    処理できる形式にする<br>
+    <tt><span style="background-color:#dddddd">samtools bam2fq X_unmapped.bam > X_unmapped.fastq</span></tt><br>
+<br>
+    ウイルスゲノム目次の作成<br>
+    <tt><span style="background-color:#dddddd">samtools faidx NC_001806.2.fasta</span></tt><br>
+    <tt><span style="background-color:#dddddd">bwa index -a bwtsw NC_001806.2.fasta</span></tt><br>
+<br>
+    ウイルスゲノムにはりつけ、後処理<br>
+<table border=0 bgcolor="#dddddd">
+<tr><td>
+<tt>
+    bwa mem -t8 -M NC_001806.2.fasta X_unmapped.fastq | \<br>
+    samtools view -@8 -1 -S -> X_unmapped_aligned.bam<br>
+<br>
+    samtools sort -@8 X_unmapped_aligned.bam X_unmapped_aligned_sorted<br>
+<br>
+    samtools index X_unmapped_aligned_sorted.bam X_unmapped_aligned_sorted.bai<br>
+<br>
+    samtools idxstats X_unmapped_aligned_sorted.bam > X_unmapped_stat.txt<br>
+</tt>
+</tr></td>
+</table>
+<br>
+    結果の確認<br>
+    <tt><span style="background-color:#dddddd">less X_unmapped_stat.txt</span></tt><br>
+<br>
+  </body>
+</html>
